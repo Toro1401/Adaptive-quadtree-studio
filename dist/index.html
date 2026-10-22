@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="Adaptive quadtree image decomposition studio">
+  <title>Adaptive Pixel Studio v2</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#" aria-label="Adaptive Pixel Studio home">adaptive<span>/</span>pixel <small>v2</small></a>
+    <div class="top-status"><span class="pulse"></span><span id="headerStatus">Ready for an image</span></div>
+    <div class="top-actions">
+      <button class="text-button" id="shareBtn">Share settings</button>
+      <button class="text-button" id="fullscreenBtn">Full screen</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="intro">
+      <div><p class="kicker">Adaptive quadtree laboratory</p><h1>Watch an image<br><em>decide where detail belongs.</em></h1></div>
+      <p>Build a picture from averaged regions. Compare refinement strategies, paint priorities, inspect errors, and export the result or its entire evolution.</p>
+    </section>
+
+    <section class="workspace" id="workspace">
+      <div class="stage-card" id="stageCard">
+        <div class="stage-head">
+          <div><span class="kicker">Live reconstruction</span><strong id="stageStatus">Waiting for an image</strong></div>
+          <div class="stage-tools">
+            <label class="mini-control">Compare <input id="compareToggle" type="checkbox"></label>
+            <label class="mini-control">Ghost <input id="ghostRange" type="range" min="0" max="80" value="0"></label>
+          </div>
+        </div>
+
+        <div class="canvas-shell" id="dropZone" tabindex="0" aria-label="Image reconstruction canvas; drop or paste an image">
+          <div class="empty-state" id="emptyState">
+            <div class="drop-icon">↘</div>
+            <h2>Drop, paste, or choose a photo</h2>
+            <p>PNG, JPEG, WebP, or any image your browser can read.</p>
+            <label class="primary-button file-button" for="fileInput">Choose image</label>
+          </div>
+          <div class="canvas-stack" id="canvasStack" hidden>
+            <canvas id="outputCanvas"></canvas>
+            <canvas id="ghostCanvas" aria-hidden="true"></canvas>
+            <canvas id="compareCanvas" aria-hidden="true"></canvas>
+            <canvas id="overlayCanvas" aria-label="Interactive cell overlay"></canvas>
+            <canvas id="maskCanvas" aria-label="Priority painting layer"></canvas>
+            <div class="compare-divider" id="compareDivider"><span>ORIGINAL</span></div>
+            <div class="magnifier" id="magnifier" hidden><canvas id="magnifierCanvas" width="150" height="150"></canvas></div>
+          </div>
+        </div>
+
+        <div class="transport">
+          <button class="icon-button" id="rewindBtn" disabled title="Rewind (R)">↤</button>
+          <button class="icon-button" id="undoBtn" disabled title="Undo (←)">←</button>
+          <button class="play-button" id="playBtn" disabled title="Play or pause (Space)">▶ <span>Play</span></button>
+          <button class="icon-button" id="stepBtn" disabled title="Split once (→)">→</button>
+          <button class="icon-button" id="redoBtn" disabled title="Redo">↦</button>
+          <label class="speed-control">Speed
+            <select id="speedSelect">
+              <option value="250">1×</option><option value="50">5×</option><option value="20" selected>20×</option><option value="0">Instant</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="timeline-block">
+          <div class="timeline-labels"><span>History</span><span id="timelineLabel">0 / 0 splits</span></div>
+          <input id="timeline" type="range" min="0" max="0" value="0" disabled>
+          <div class="metrics-row">
+            <div><b id="cellCount">0</b><span>cells</span></div>
+            <div><b id="rmseValue">—</b><span>RMSE</span></div>
+            <div><b id="coverageValue">0%</b><span>budget</span></div>
+            <div><b id="stopReason">idle</b><span>state</span></div>
+          </div>
+          <canvas class="chart" id="errorChart" height="92" aria-label="Error over cell count graph"></canvas>
+        </div>
+      </div>
+
+      <aside class="control-panel">
+        <div class="panel-title"><h2>Controls</h2><span id="dirtyBadge" hidden>settings changed</span></div>
+
+        <details open>
+          <summary>Input & stopping</summary>
+          <div class="detail-body">
+            <label class="upload-row" for="fileInput">＋ Replace image</label>
+            <input id="fileInput" type="file" accept="image/*" hidden>
+            <div class="field"><div class="field-label"><label for="budgetInput">Maximum cells</label><input id="budgetInput" type="number" min="4" max="16384" value="1024"></div><input id="budgetRange" type="range" min="4" max="16384" value="1024"></div>
+            <div class="preset-row" id="budgetPresets"><button data-value="64">64</button><button data-value="256">256</button><button data-value="1024">1K</button><button data-value="4096">4K</button><button data-value="16384">16K</button></div>
+            <div class="field"><div class="field-label"><label for="qualityTarget">Stop below RMSE</label><input id="qualityTarget" type="number" min="0" max="255" step="1" value="0"></div><p class="hint">Use 0 to disable quality-based stopping.</p></div>
+            <div class="two-fields">
+              <label>Min width<select id="minWidth"><option value="0">No limit</option><option value="8">1/8</option><option value="16">1/16</option><option value="32">1/32</option><option value="64">1/64</option><option value="128">1/128</option><option value="256">1/256</option></select></label>
+              <label>Min height<select id="minHeight"><option value="0">No limit</option><option value="8">1/8</option><option value="16">1/16</option><option value="32">1/32</option><option value="64">1/64</option><option value="128">1/128</option><option value="256">1/256</option></select></label>
+            </div>
+          </div>
+        </details>
+
+        <details open>
+          <summary>Refinement model</summary>
+          <div class="detail-body">
+            <label class="select-field">Priority model<select id="priorityModel"><option value="total">Total reconstruction error</option><option value="gain">Expected error reduction</option><option value="deviation">Local standard deviation</option><option value="edge">Edge intensity</option><option value="random">Random experiment</option></select></label>
+            <div class="field"><div class="field-label"><label for="areaWeight">Coverage weighting</label><output id="areaWeightLabel">Balanced</output></div><input id="areaWeight" type="range" min="0" max="2" step="0.1" value="1"></div>
+            <div class="two-fields">
+              <label>Analyze<select id="channelMode"><option value="rgb">Full color</option><option value="luma">Luminance</option><option value="saturation">Saturation</option><option value="alpha">Alpha</option></select></label>
+              <label>Cell color<select id="representative"><option value="mean">Mean</option><option value="median">Median</option><option value="dominant">Dominant</option></select></label>
+            </div>
+            <label class="select-field">Subdivision<select id="splitMode"><option value="quad">Always four</option><option value="best">Best of quad / horizontal / vertical</option><option value="horizontal">Horizontal only</option><option value="vertical">Vertical only</option></select></label>
+            <div class="field"><div class="field-label"><label for="noiseBlur">Noise tolerance</label><output id="noiseLabel">Off</output></div><input id="noiseBlur" type="range" min="0" max="4" step="0.5" value="0"></div>
+            <button class="secondary-button full" id="applySettingsBtn" disabled>Rebuild with changed settings</button>
+          </div>
+        </details>
+
+        <details>
+          <summary>Priority painting</summary>
+          <div class="detail-body">
+            <div class="segmented" id="maskMode"><button class="active" data-mode="off">Off</button><button data-mode="boost">Boost</button><button data-mode="suppress">Suppress</button></div>
+            <div class="field"><div class="field-label"><label for="brushSize">Brush size</label><output id="brushLabel">40 px</output></div><input id="brushSize" type="range" min="5" max="160" value="40"></div>
+            <div class="button-row"><button class="secondary-button" id="clearMaskBtn">Clear mask</button><button class="secondary-button" id="applyMaskBtn" disabled>Apply & rewind</button></div>
+            <p class="hint">Paint red to attract detail or blue to protect an area from refinement.</p>
+          </div>
+        </details>
+
+        <details>
+          <summary>Visualization</summary>
+          <div class="detail-body checks">
+            <label><input id="outlineToggle" type="checkbox"> Cell outlines</label>
+            <label><input id="heatmapToggle" type="checkbox"> Error heatmap</label>
+            <label><input id="depthToggle" type="checkbox"> Quadtree depth colors</label>
+            <label><input id="nextToggle" type="checkbox" checked> Highlight next split</label>
+            <label><input id="animationToggle" type="checkbox" checked> Split animation</label>
+            <label><input id="inspectorToggle" type="checkbox"> Magnifying inspector</label>
+            <div class="field"><div class="field-label"><label for="compareRange">Comparison divider</label><output id="compareLabel">50%</output></div><input id="compareRange" type="range" min="0" max="100" value="50"></div>
+          </div>
+        </details>
+
+        <details>
+          <summary>Experiment presets</summary>
+          <div class="detail-body preset-grid" id="experimentPresets">
+            <button data-preset="portrait"><b>Portrait</b><span>Edges + balanced skin</span></button>
+            <button data-preset="landscape"><b>Landscape</b><span>Broad coverage</span></button>
+            <button data-preset="pixel"><b>Pixel art</b><span>Hard color regions</span></button>
+            <button data-preset="edges"><b>Edges</b><span>Structure first</span></button>
+            <button data-preset="balanced"><b>Balanced</b><span>General purpose</span></button>
+          </div>
+        </details>
+
+        <details>
+          <summary>Save & export</summary>
+          <div class="detail-body">
+            <button class="primary-button full" id="saveProjectBtn" disabled>Save & put away</button>
+            <div class="export-grid">
+              <button id="downloadPngBtn" disabled>PNG</button><button id="downloadFullBtn" disabled>Full-res PNG</button><button id="downloadSvgBtn" disabled>SVG</button><button id="downloadWebmBtn" disabled>WebM evolution</button><button id="exportProjectBtn" disabled>Project JSON</button><label for="importProjectInput">Import project</label>
+              <input id="importProjectInput" type="file" accept="application/json,.json" hidden>
+            </div>
+            <p class="hint" id="exportHint">Exports preserve transparency when the source contains alpha.</p>
+          </div>
+        </details>
+      </aside>
+    </section>
+
+    <section class="inspector-card" id="inspectorCard" hidden>
+      <div><span class="kicker">Cell inspector</span><h2 id="inspectTitle">Cell —</h2></div>
+      <dl><div><dt>Bounds</dt><dd id="inspectBounds">—</dd></div><div><dt>Average</dt><dd id="inspectColor">—</dd></div><div><dt>Error</dt><dd id="inspectError">—</dd></div><div><dt>Priority</dt><dd id="inspectPriority">—</dd></div><div><dt>Depth</dt><dd id="inspectDepth">—</dd></div></dl>
+    </section>
+
+    <section class="library-card">
+      <div class="library-head"><div><span class="kicker">Persistent browser library</span><h2>Saved studies</h2></div><div class="compare-controls"><select id="compareA"><option value="">Study A</option></select><span>vs</span><select id="compareB"><option value="">Study B</option></select><button id="compareStudiesBtn">Compare</button></div></div>
+      <div class="library-grid" id="libraryGrid"><p class="empty-library">No saved studies yet.</p></div>
+    </section>
+  </main>
+
+  <dialog id="compareDialog">
+    <div class="dialog-head"><div><span class="kicker">Side-by-side study comparison</span><h2>Saved results</h2></div><button id="closeCompareBtn" aria-label="Close">×</button></div>
+    <div class="compare-grid" id="compareGrid"></div>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" hidden></div>
+  <script src="engine.js"></script>
+  <script src="storage.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
